@@ -329,7 +329,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
             subWorkflowTask.setSubworkflowChanged(true);
             subWorkflowTask.setStatus(IN_PROGRESS);
             subWorkflowTask.setReasonForIncompletion(null);
-            executionDAOFacade.updateTask(subWorkflowTask);
+            executionDAOFacade.forceUpdateTask(subWorkflowTask);
 
             // add an execution log
             String currentWorkflowIdentifier = workflow.toShortString();
@@ -372,20 +372,20 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
                             task.setStatus(IN_PROGRESS);
                             task.setReasonForIncompletion(null);
                             task.setSubworkflowChanged(true);
-                            executionDAOFacade.updateTask(task);
+                            executionDAOFacade.forceUpdateTask(task);
                         } else if (child.getTasks().stream().anyMatch(UNSUCCESSFUL_TERMINAL_TASK)) {
                             retry(child);
                             task.setStatus(IN_PROGRESS);
                             task.setReasonForIncompletion(null);
                             task.setSubworkflowChanged(true);
-                            executionDAOFacade.updateTask(task);
+                            executionDAOFacade.forceUpdateTask(task);
                         }
                     }
                 } else if (task.getStatus() == CANCELED) {
                     if (task.getTaskType().equalsIgnoreCase(TaskType.JOIN.toString())
                             || task.getTaskType().equalsIgnoreCase(TaskType.DO_WHILE.toString())) {
                         task.setStatus(IN_PROGRESS);
-                        executionDAOFacade.updateTask(task);
+                        executionDAOFacade.forceUpdateTask(task);
                     } else {
                         task.setRetryCount(task.getRetryCount() + 1);
                         task.setReasonForIncompletion(null);
@@ -397,7 +397,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
                         task.setRetried(false);
                         task.setExecuted(false);
                         task.setStatus(SCHEDULED);
-                        executionDAOFacade.updateTask(task);
+                        executionDAOFacade.forceUpdateTask(task);
                         addTaskToQueue(task);
                     }
                 }
@@ -428,7 +428,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
                                 task.setStatus(TaskModel.Status.IN_PROGRESS);
                                 addTaskToQueue(task);
                             })
-                    .forEach(executionDAOFacade::updateTask);
+                    .forEach(executionDAOFacade::forceUpdateTask);
         }
     }
 
@@ -513,7 +513,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
         // Note: updateTasks before updateWorkflow might fail when Workflow is archived
         // and doesn't
         // exist in primary store.
-        executionDAOFacade.updateTasks(workflow.getTasks());
+        executionDAOFacade.forceUpdateTasks(workflow.getTasks());
         scheduleTask(workflow, retriableTasks);
         // Push AFTER tasks are reset so async decider sees SCHEDULED/IN_PROGRESS, not stale state
         queueDAO.push(
@@ -1321,7 +1321,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
                 }
 
                 if (!outcome.tasksToBeUpdated.isEmpty() || !tasksToBeScheduled.isEmpty()) {
-                    executionDAOFacade.updateTasks(tasksToBeUpdated);
+                    executionDAOFacade.forceUpdateTasks(tasksToBeUpdated);
                 }
 
                 if (stateChanged) {
@@ -1396,7 +1396,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
             // reset the flag
             TaskModel subWorkflowTask = changedSubWorkflowTask.get();
             subWorkflowTask.setSubworkflowChanged(false);
-            executionDAOFacade.updateTask(subWorkflowTask);
+            executionDAOFacade.forceUpdateTask(subWorkflowTask);
 
             LOGGER.info(
                     "{} reset subworkflowChanged flag for {}",
@@ -2131,7 +2131,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
             }
         }
         if (terminateWorkflowException.getTask() != null) {
-            executionDAOFacade.updateTask(terminateWorkflowException.getTask());
+            executionDAOFacade.forceUpdateTask(terminateWorkflowException.getTask());
         }
         return terminateWorkflow(
                 workflow,
@@ -2236,7 +2236,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
                     && !TaskType.TASK_TYPE_SUB_WORKFLOW.equalsIgnoreCase(
                             rerunFromTask.getTaskType())) {
                 rerunFromTask.setStatus(SCHEDULED);
-                executionDAOFacade.updateTask(rerunFromTask);
+                executionDAOFacade.forceUpdateTask(rerunFromTask);
             }
             updateAndPushParents(workflow, "reran");
             notifyWorkflowStatusListener(workflow, WorkflowEventType.RETRIED);
@@ -2261,7 +2261,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
                 rerunFromTask.setPollCount(0);
                 rerunFromTask.setStatus(IN_PROGRESS);
                 rerunFromTask.setReasonForIncompletion(null);
-                executionDAOFacade.updateTask(rerunFromTask);
+                executionDAOFacade.forceUpdateTask(rerunFromTask);
                 // Push AFTER task reset so async decider sees IN_PROGRESS, not stale FAILED state
                 queueDAO.push(
                         DECIDER_QUEUE,
@@ -2276,7 +2276,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
             // workflows; exclude rerunFromTask, which is updated individually below — writing its
             // stale FAILED state here would race with the sweeper and can re-terminate the parent
             final String rerunTaskId = rerunFromTask.getTaskId();
-            executionDAOFacade.updateTasks(
+            executionDAOFacade.forceUpdateTasks(
                     workflow.getTasks().stream()
                             .filter(t -> !t.getTaskId().equals(rerunTaskId))
                             .collect(Collectors.toList()));
@@ -2308,7 +2308,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
                     // start() hit a transient error — fall back to async queue processing.
                     addTaskToQueue(rerunFromTask);
                 }
-                executionDAOFacade.updateTask(rerunFromTask);
+                executionDAOFacade.forceUpdateTask(rerunFromTask);
                 finalizeRerun(workflow, rerunFromTask);
                 return true;
             }
@@ -2360,7 +2360,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
             }
             // Write the new state to DB before queueing so any async worker sees SCHEDULED,
             // not the stale CANCELED/FAILED state that was in the DB before this rerun.
-            executionDAOFacade.updateTask(rerunFromTask);
+            executionDAOFacade.forceUpdateTask(rerunFromTask);
             if (rerunFromTask.getStatus() == SCHEDULED) {
                 addTaskToQueue(rerunFromTask);
             }
@@ -2444,7 +2444,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
                         });
         // Write SCHEDULED to DB before queueing so async workers (e.g. SystemTaskWorker)
         // never read a stale CANCELED/FAILED state and silently drop the queue entry.
-        executionDAOFacade.updateTasks(workflow.getTasks());
+        executionDAOFacade.forceUpdateTasks(workflow.getTasks());
         tasksToQueue.forEach(this::addTaskToQueue);
         // Push AFTER all sibling tasks are reset so async decider never sees stale CANCELED/FAILED
         queueDAO.push(
@@ -2506,7 +2506,7 @@ public class WorkflowExecutorOps implements WorkflowExecutor {
             return;
         }
         executeSubworkflowTaskAndSyncData(subWorkflow, subWorkflowTask);
-        executionDAOFacade.updateTask(subWorkflowTask);
+        executionDAOFacade.forceUpdateTask(subWorkflowTask);
         if (subWorkflowTask.getStatus().isTerminal()) {
             // This fork branch's sub-workflow just finished; a sibling JOIN waiting on it may now
             // be satisfiable. Nudge it off its exponential-backoff poll so the parent completes
